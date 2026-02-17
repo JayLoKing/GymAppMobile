@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   Modal,
   ActivityIndicator,
-  Linking,
   Alert,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -15,6 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
+import { iniciarUso, getMaquinaById } from '../../services/api';
 
 export default function ScannerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -22,7 +22,8 @@ export default function ScannerScreen() {
   const [scanned, setScanned] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [scannedData, setScannedData] = useState('');
-  const [scannedType, setScannedType] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [maquinaInfo, setMaquinaInfo] = useState<{ id: number; nombre: string } | null>(null);
 
   useEffect(() => {
     if (!permission?.granted) {
@@ -34,108 +35,54 @@ export default function ScannerScreen() {
     if (scanned) return;
     
     setScanned(true);
-    setScannedType(type);
     setScannedData(data);
     setModalVisible(true);
   };
 
-  const handleNavigate = async () => {
-    setModalVisible(false);
-    
+  const handleUsar = async () => {
+    setLoading(true);
     try {
-      // Detectar si es una URL
-      const isUrl = scannedData.match(/^(https?:\/\/|www\.)[^\s]+$/i);
+      // Intentar parsear el dato escaneado como ID de máquina (número)
+      const maquinaId = parseInt(scannedData, 10);
       
-      if (isUrl) {
-        // Abrir enlace en el navegador
-        let url = scannedData;
-        if (!url.startsWith('http')) {
-          url = 'https://' + url;
-        }
-        
-        const supported = await Linking.canOpenURL(url);
-        
-        if (supported) {
-          await Linking.openURL(url);
-        } else {
-          Alert.alert('Error', 'No se puede abrir este enlace');
-        }
-      } 
-      // Detectar si es un número de teléfono
-      else if (scannedData.match(/^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/)) {
-        const tel = `tel:${scannedData.replace(/[^0-9+]/g, '')}`;
-        const supported = await Linking.canOpenURL(tel);
-        
-        if (supported) {
-          await Linking.openURL(tel);
-        } else {
-          Alert.alert('Error', 'No se puede llamar a este número');
-        }
-      }
-      // Detectar si es un email
-      else if (scannedData.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-        const email = `mailto:${scannedData}`;
-        const supported = await Linking.canOpenURL(email);
-        
-        if (supported) {
-          await Linking.openURL(email);
-        } else {
-          Alert.alert('Error', 'No se puede enviar email');
-        }
-      }
-      // Detectar coordenadas GPS
-      else if (scannedData.match(/^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?),\s*[-+]?(180(\.0+)?|((1[0-7]\d)|([1-9]?\d))(\.\d+)?)$/)) {
-        const [lat, lon] = scannedData.split(',').map(coord => coord.trim());
-        const mapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
-        await Linking.openURL(mapsUrl);
-      }
-      // Detectar si es un texto plano (buscar en Google)
-      else {
-        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(scannedData)}`;
-        await Linking.openURL(searchUrl);
-      }
-      
-      // Resetear después de navegar
-      setTimeout(() => {
+      if (isNaN(maquinaId)) {
+        Alert.alert('Error', 'El código QR no contiene un ID de máquina válido');
+        setModalVisible(false);
         setScanned(false);
-      }, 1000);
+        setLoading(false);
+        return;
+      }
+
+      // Obtener info de la máquina
+      const maquina = await getMaquinaById(maquinaId);
       
-    } catch (error) {
-      console.error('Error al navegar:', error);
+      // Iniciar uso de la máquina
+      const uso = await iniciarUso(maquinaId);
+      
+      setModalVisible(false);
+      
+      // Navegar a ActiveUseScreen con la info del uso
+      navigation.navigate('ActiveUse', {
+        usoId: uso.id,
+        maquinaNombre: maquina.nombre,
+      });
+    } catch (error: any) {
+      console.error('Error al iniciar uso:', error);
       Alert.alert(
         'Error',
-        'No se pudo abrir el contenido escaneado',
-        [
-          { 
-            text: 'OK', 
-            onPress: () => setScanned(false) 
-          }
-        ]
+        error.response?.data?.message || 'No se pudo iniciar el uso de la máquina. Intenta nuevamente.'
       );
+      setModalVisible(false);
+      setScanned(false);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleCancel = () => {
     setModalVisible(false);
-    setScanned(false); // Permitir escanear otro código
-  };
-
-  // Detectar tipo de contenido para mostrar icono apropiado
-  const getContentIcon = () => {
-    if (scannedData.match(/^(https?:\/\/|www\.)/i)) {
-      if (scannedData.includes('youtube.com') || scannedData.includes('youtu.be')) {
-        return <Ionicons name="logo-youtube" size={50} color="#FF0000" />;
-      }
-      return <Ionicons name="globe-outline" size={50} color={colors.primary} />;
-    } else if (scannedData.match(/^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/)) {
-      return <Ionicons name="call-outline" size={50} color="#4CAF50" />;
-    } else if (scannedData.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-      return <Ionicons name="mail-outline" size={50} color="#2196F3" />;
-    } else if (scannedData.match(/^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?),\s*[-+]?(180(\.0+)?|((1[0-7]\d)|([1-9]?\d))(\.\d+)?)$/)) {
-      return <Ionicons name="location-outline" size={50} color="#F44336" />;
-    } else {
-      return <Ionicons name="text-outline" size={50} color={colors.primary} />;
-    }
+    setScanned(false);
+    setMaquinaInfo(null);
   };
 
   if (!permission) {
@@ -151,7 +98,7 @@ export default function ScannerScreen() {
       <View style={styles.centered}>
         <Ionicons name="camera-outline" size={64} color={colors.textSecondary} />
         <Text style={styles.permText}>Permiso de cámara necesario</Text>
-        <Text style={styles.permSub}>Para escanear códigos QR</Text>
+        <Text style={styles.permSub}>Para escanear códigos QR de las máquinas</Text>
         <TouchableOpacity 
           style={styles.permButton} 
           onPress={requestPermission}
@@ -169,17 +116,17 @@ export default function ScannerScreen() {
         style={StyleSheet.absoluteFillObject}
         facing="back"
         barcodeScannerSettings={{ 
-          barcodeTypes: ['qr', 'aztec', 'pdf417', 'code128', 'code39', 'code93', 'codabar', 'ean13', 'ean8', 'itf14', 'upc_a', 'upc_e']
+          barcodeTypes: ['qr', 'code128', 'code39', 'code93', 'codabar', 'ean13', 'ean8', 'itf14', 'upc_a', 'upc_e']
         }}
         onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
       />
       
       <View style={styles.overlay}>
         <View style={styles.frame} />
-        <Text style={styles.hint}>Escanea cualquier código</Text>
+        <Text style={styles.hint}>Escanea el código QR de la máquina</Text>
       </View>
 
-      {/* Modal con dos botones */}
+      {/* Modal con info de la máquina y botones */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -188,28 +135,43 @@ export default function ScannerScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            {getContentIcon()}
+            <Ionicons name="barbell" size={50} color={colors.primary} />
             
-            <Text style={styles.modalTitle}>Contenido escaneado</Text>
-            <Text style={styles.modalMessage} numberOfLines={3}>
-              {scannedData}
+            <Text style={styles.modalTitle}>Máquina escaneada</Text>
+            <Text style={styles.modalMessage}>
+              ID: {scannedData}
             </Text>
+            
+            <Text style={styles.confirmText}>¿Deseas usar esta máquina?</Text>
             
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={[styles.button, styles.cancelButton]}
                 onPress={handleCancel}
+                disabled={loading}
                 activeOpacity={0.8}
               >
-                <Text style={styles.cancelButtonText}>Cancelar</Text>
+                {loading ? (
+                  <ActivityIndicator color={colors.text} />
+                ) : (
+                  <Text style={styles.cancelButtonText}>Cancelar</Text>
+                )}
               </TouchableOpacity>
               
               <TouchableOpacity
-                style={[styles.button, styles.navigateButton]}
-                onPress={handleNavigate}
+                style={[styles.button, styles.useButton]}
+                onPress={handleUsar}
+                disabled={loading}
                 activeOpacity={0.8}
               >
-                <Text style={styles.navigateButtonText}>Abrir</Text>
+                {loading ? (
+                  <ActivityIndicator color={colors.primaryContrast} />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={20} color={colors.primaryContrast} />
+                    <Text style={styles.useButtonText}>Usar</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -321,12 +283,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   modalMessage: {
+    fontSize: 16,
+    color: colors.primary,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  confirmText: {
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
-    lineHeight: 20,
-    maxWidth: '100%',
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -349,12 +316,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
   },
-  navigateButton: {
+  useButton: {
     backgroundColor: colors.primary,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
   },
-  navigateButtonText: {
+  useButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.primaryContrast,
   },
 });

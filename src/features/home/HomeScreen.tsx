@@ -74,7 +74,7 @@ export default function HomeScreen() {
         style={styles.card}
         onPress={() =>
           navigation.navigate('ActiveUse', {
-            usoActivoId: item.id,
+            usoId: item.id,
             maquinaNombre: nombre,
           })
         }

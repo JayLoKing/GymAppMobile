@@ -1,5 +1,6 @@
 export type RootStackParamList = {
+  Login: undefined;
   Home: undefined;
   Scanner: undefined;
-  ActiveUse: { usoActivoId: number; maquinaNombre: string };
+  ActiveUse: { usoId: number; maquinaNombre: string };
 };

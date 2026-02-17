@@ -4,18 +4,18 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
-import { terminarUso } from '../../services/api';
+import { finalizarUso } from '../../services/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveUse'>;
 
 export default function ActiveUseScreen({ navigation, route }: Props) {
-  const { usoActivoId, maquinaNombre } = route.params;
+  const { usoId, maquinaNombre } = route.params;
   const [loading, setLoading] = useState(false);
 
   const handleLiberar = () => {
     Alert.alert(
       'Liberar máquina',
-      `¿Terminar uso de "${maquinaNombre}"? La máquina quedará disponible para otros.`,
+      `¿Finalizar uso de "${maquinaNombre}"? La máquina quedará disponible para otros.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -24,7 +24,7 @@ export default function ActiveUseScreen({ navigation, route }: Props) {
           onPress: async () => {
             setLoading(true);
             try {
-              await terminarUso(usoActivoId);
+              await finalizarUso(usoId);
               navigation.goBack();
             } catch {
               Alert.alert('Error', 'No se pudo liberar la máquina. Revisa la conexión.');
